@@ -241,11 +241,11 @@ def build_dataset(num_samples, data_dir, prefix='train'):
         for obj in objects:
             # Get object params
             color_id, shape, bbox = obj[0], shape_map[obj[2]], obj[3]
-            
+
             img_det_df = img_det_df.append({'filename': filename, 
                                             'width': img_size, 
                                             'height': img_size, 
-                                            'class': 'obj', 
+                                            'class': obj[2], 
                                             'xmin': bbox[0], 'ymin': bbox[1],
                                             'xmax': bbox[2], 'ymax': bbox[3]}, ignore_index=True)
         
