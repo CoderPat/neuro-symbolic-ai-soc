@@ -1,0 +1,7 @@
+torchtext 
+opencv-python
+pandas
+numpy
+scikit-learn
+scikit-image
+pillow
