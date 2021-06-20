@@ -87,9 +87,11 @@ class ProgramExecutor(DSL):
 
         return prev_out
     
-    def __call__(self, scene, program):
+    def __call__(self, scene, program, scene_expls=None, program_expls=None):
         '''Executes a program on the scene'''
         self.scene = scene
+        self.scene_expls = scene_expls
+        self.program_expls = program_expls
         
         prev_out = None
         for seq in program:

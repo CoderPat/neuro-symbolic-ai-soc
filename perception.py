@@ -12,6 +12,8 @@ from torchvision import transforms as tfms
 from PIL import Image
 from tqdm.notebook import tqdm
 
+from lime import lime_image
+
 
 def train_detector(train_data, filename='detector.svm'):
     '''Trains an object detector (HOG + SVM) and saves the model'''
@@ -26,9 +28,11 @@ def train_detector(train_data, filename='detector.svm'):
     options.C = 5
     
     # Train the model
+    print("training...")
     detector = dlib.train_simple_object_detector(images, bounding_boxes, options)
     
     # Check results
+    print("evaluating...")
     results = dlib.test_simple_object_detector(images, bounding_boxes, detector)
     print(f'Training Results: {results}')
     
@@ -167,7 +171,7 @@ class PerceptionPipe():
         return objects
     
     
-    def extract_attributes(self, x_img, prob=0.5, debug=False):
+    def extract_attributes(self, x_img, prob=0.5):
         '''Returns the shape and color of a given object'''
         # Load image as PIL instance (color image)
         image = Image.fromarray(cv2.cvtColor(x_img, cv2.COLOR_BGR2RGB))
@@ -177,36 +181,59 @@ class PerceptionPipe():
         # Predict Shape
         with torch.no_grad():
             out = torch.sigmoid(self.classifier(img)).squeeze()
-            if debug:
-                print(out)
-        if out < prob:
-            shape = 'circle'
-        else:
-            shape = 'rectangle'
+        shape = 'circle' if out < prob else 'rectangle'
             
         # Extract Color
         center_pixel = (x_img[20, 20, :]).astype('int')
-        
         color_id = cosine_similarity(center_pixel.reshape(1, -1), self.colors).argmax()
         color = self.idx2color[color_id]
-        
-#         print(center_pixel)
-#         print(color_id)
-        
+
         return shape, color
+
+    def explain(self, x_img):
+
+        def classify(images):
+            images = np.expand_dims(images[:, :, :, 0], 1)
+            images = torch.tensor(images).float().to(self.device)
+
+            # Predict Shape
+            self.classifier.eval()
+            with torch.no_grad():
+                out = torch.sigmoid(self.classifier(images))[:, 0]
+                probs = torch.stack([out, 1-out], dim=-1)
+            return probs.detach().cpu().numpy()
+
+        image = Image.fromarray(cv2.cvtColor(x_img, cv2.COLOR_BGR2RGB))
+        # Preprocess (binarized image)
+        img = self.preproc(image)[0].numpy().astype(np.float64)
+        print(img.shape)
+
+        explainer = lime_image.LimeImageExplainer()
+        explanation = explainer.explain_instance(
+            img, 
+            classify, 
+            labels=(0,1), 
+            hide_color=0, 
+            num_samples=1000)
+        
+        return explanation
+
     
-    def scene_repr(self, img, prob=0.5, debug=False):
+    def scene_repr(self, img, prob=0.5, return_expls=False):
         '''Returns a structured scene representation as a dataframe'''
         # Perform object detection and get the objects
         objects = self.detect(img)
         
         # Init Scene representation
         scene_df = pd.DataFrame(columns=['shape', 'color', 'position'])
-        
+        explanations = []
+
         for obj, center in objects:
-            shape, color = self.extract_attributes(obj, prob, debug)
+            shape, color = self.extract_attributes(obj, prob)
             scene_df = scene_df.append({'shape': shape, 
                                         'color': color, 
                                         'position': center}, ignore_index=True)
+            if return_expls:
+                explanations.append(self.explain(obj))
         
-        return scene_df
+        return scene_df, explanations if return_expls else scene_df
